@@ -3,18 +3,22 @@ import type { ChatCompletionMessageParam } from "openai/resources/chat";
 
 export type GrokMessage = ChatCompletionMessageParam;
 
-export interface GrokTool {
-  type: "function";
-  function: {
-    name: string;
-    description: string;
-    parameters: {
-      type: "object";
-      properties: Record<string, any>;
-      required: string[];
-    };
-  };
-}
+export type GrokTool =
+  | {
+      type: "function";
+      function: {
+        name: string;
+        description: string;
+        parameters: {
+          type: "object";
+          properties: Record<string, any>;
+          required: string[];
+        };
+      };
+    }
+  | { type: "web_search" }
+  | { type: "x_search" }
+  | { type: string };  // fallback for future/unknown built-ins
 
 export interface GrokToolCall {
   id: string;
@@ -23,15 +27,6 @@ export interface GrokToolCall {
     name: string;
     arguments: string;
   };
-}
-
-export interface SearchParameters {
-  mode?: "auto" | "on" | "off";
-  // sources removed - let API use default sources to avoid format issues
-}
-
-export interface SearchOptions {
-  search_parameters?: SearchParameters;
 }
 
 export interface GrokResponse {
@@ -74,8 +69,7 @@ export class GrokClient {
   async chat(
     messages: GrokMessage[],
     tools?: GrokTool[],
-    model?: string,
-    searchOptions?: SearchOptions
+    model?: string
   ): Promise<GrokResponse> {
     try {
       const requestPayload: any = {
@@ -87,13 +81,7 @@ export class GrokClient {
         max_tokens: this.defaultMaxTokens,
       };
 
-      // Add search parameters if specified
-      if (searchOptions?.search_parameters) {
-        requestPayload.search_parameters = searchOptions.search_parameters;
-      }
-
-      const response =
-        await this.client.chat.completions.create(requestPayload);
+      const response = await this.client.chat.completions.create(requestPayload);
 
       return response as GrokResponse;
     } catch (error: any) {
@@ -104,8 +92,7 @@ export class GrokClient {
   async *chatStream(
     messages: GrokMessage[],
     tools?: GrokTool[],
-    model?: string,
-    searchOptions?: SearchOptions
+    model?: string
   ): AsyncGenerator<any, void, unknown> {
     try {
       const requestPayload: any = {
@@ -118,14 +105,7 @@ export class GrokClient {
         stream: true,
       };
 
-      // Add search parameters if specified
-      if (searchOptions?.search_parameters) {
-        requestPayload.search_parameters = searchOptions.search_parameters;
-      }
-
-      const stream = (await this.client.chat.completions.create(
-        requestPayload
-      )) as any;
+      const stream = (await this.client.chat.completions.create(requestPayload)) as any;
 
       for await (const chunk of stream) {
         yield chunk;
@@ -135,19 +115,11 @@ export class GrokClient {
     }
   }
 
-  async search(
-    query: string,
-    searchParameters?: SearchParameters
-  ): Promise<GrokResponse> {
+  async search(query: string): Promise<GrokResponse> {
     const searchMessage: GrokMessage = {
       role: "user",
       content: query,
     };
-
-    const searchOptions: SearchOptions = {
-      search_parameters: searchParameters || { mode: "on" },
-    };
-
-    return this.chat([searchMessage], [], undefined, searchOptions);
+    return this.chat([searchMessage], [], undefined);
   }
 }
